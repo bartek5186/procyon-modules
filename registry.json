@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "modules": {
+    "example": {
+      "source": "./example"
+    },
+    "payment-system": {
+      "source": "./payment-system"
+    }
+  }
+}
