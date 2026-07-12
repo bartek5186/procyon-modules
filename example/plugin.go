@@ -10,7 +10,7 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
-const Version = "0.1.0"
+const Version = "0.1.1"
 
 type Plugin struct{}
 
