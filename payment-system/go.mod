@@ -5,7 +5,7 @@ go 1.26.0
 toolchain go1.26.2
 
 require (
-	github.com/bartek5186/procyon-core v0.2.0
+	github.com/bartek5186/procyon-core v0.3.0
 	github.com/labstack/echo/v4 v4.13.4
 	github.com/stripe/stripe-go/v84 v84.0.0
 	go.uber.org/zap v1.27.1

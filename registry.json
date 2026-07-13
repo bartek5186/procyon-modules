@@ -2,10 +2,14 @@
   "schema_version": 1,
   "modules": {
     "example": {
-      "source": "./example"
+      "source": "./example",
+      "version": "0.1.1",
+      "description": "Minimal Procyon shared-module example"
     },
     "payment-system": {
-      "source": "./payment-system"
+      "source": "./payment-system",
+      "version": "0.2.0",
+      "description": "Provider-based payments and subscriptions"
     }
   }
 }

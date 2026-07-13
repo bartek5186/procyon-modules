@@ -30,8 +30,8 @@ github.com/AzureAD/microsoft-authentication-library-for-go v1.1.1/go.mod h1:wP83
 github.com/AzureAD/microsoft-authentication-library-for-go v1.2.2/go.mod h1:wP83P5OoQ5p6ip3ScPr0BAq0BvuPAvacpEuSzyouqAI=
 github.com/AzureAD/microsoft-authentication-library-for-go v1.4.2 h1:oygO0locgZJe7PpYPXT5A29ZkwJaPqcva7BVeemZOZs=
 github.com/AzureAD/microsoft-authentication-library-for-go v1.4.2/go.mod h1:wP83P5OoQ5p6ip3ScPr0BAq0BvuPAvacpEuSzyouqAI=
-github.com/bartek5186/procyon-core v0.2.0 h1:2/ghqG+9R4yrW4v5EDriTiZzZanD6oAgkdGlZML7R5Q=
-github.com/bartek5186/procyon-core v0.2.0/go.mod h1:TMZwtPPPHA46O7YjkzFFSOGnYrvuFRo4P1KQ7YvBch4=
+github.com/bartek5186/procyon-core v0.3.0 h1:3/NvJfPIsUaN3Bhi6MnYa/A67X9jSaf+Ji+7A+KDhqo=
+github.com/bartek5186/procyon-core v0.3.0/go.mod h1:TMZwtPPPHA46O7YjkzFFSOGnYrvuFRo4P1KQ7YvBch4=
 github.com/bmatcuk/doublestar/v4 v4.6.1/go.mod h1:xBQ8jztBU6kakFMg+8WGxn0c6z1fTSPVIjEY1Wr7jzc=
 github.com/bmatcuk/doublestar/v4 v4.9.1 h1:X8jg9rRZmJd4yRy7ZeNDRnM+T3ZfHv15JiBJ/avrEXE=
 github.com/bmatcuk/doublestar/v4 v4.9.1/go.mod h1:xBQ8jztBU6kakFMg+8WGxn0c6z1fTSPVIjEY1Wr7jzc=

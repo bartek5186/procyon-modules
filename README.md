@@ -33,4 +33,4 @@ procyon-cli module update payment-system --published --version v0.2.0
 The local registry and the parent workspace `go.work` are intended for
 development. Publish the required Procyon Core version first, then tag
 submodules using Go monorepo tag names such as `example/v0.1.1` and
-`payment-system/v0.1.1`.
+`payment-system/v0.2.0`.
