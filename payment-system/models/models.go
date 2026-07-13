@@ -2,6 +2,14 @@ package models
 
 import "time"
 
+type WebhookStatus string
+
+const (
+	WebhookStatusProcessing WebhookStatus = "PROCESSING"
+	WebhookStatusSucceeded  WebhookStatus = "SUCCEEDED"
+	WebhookStatusFailed     WebhookStatus = "FAILED"
+)
+
 type PaymentStatus string
 
 const (
@@ -10,6 +18,7 @@ const (
 	PaymentStatusFailed    PaymentStatus = "FAILED"
 	PaymentStatusCanceled  PaymentStatus = "CANCELED"
 	PaymentStatusRefunded  PaymentStatus = "REFUNDED"
+	PaymentStatusDisputed  PaymentStatus = "DISPUTED"
 )
 
 type SubscriptionStatus string
@@ -44,14 +53,21 @@ type PaymentEvent struct {
 func (PaymentEvent) TableName() string { return "payment_events" }
 
 type PaymentWebhookEvent struct {
-	ID          uint       `gorm:"primaryKey"`
-	Provider    string     `gorm:"size:32;not null;uniqueIndex:idx_webhook_provider_event,priority:1"`
-	EventID     string     `gorm:"size:191;not null;uniqueIndex:idx_webhook_provider_event,priority:2"`
-	EventType   string     `gorm:"size:100;not null;index"`
-	ProcessedAt *time.Time `gorm:"index"`
-	LastError   string     `gorm:"type:text"`
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
+	ID                  uint          `gorm:"primaryKey"`
+	Provider            string        `gorm:"size:32;not null;uniqueIndex:idx_webhook_provider_event,priority:1"`
+	EventID             string        `gorm:"size:191;not null;uniqueIndex:idx_webhook_provider_event,priority:2"`
+	EventType           string        `gorm:"size:100;not null;index"`
+	Status              WebhookStatus `gorm:"size:20;not null;default:PROCESSING;index"`
+	Attempts            int           `gorm:"not null;default:1"`
+	Payload             []byte        `json:"-"`
+	Signature           string        `gorm:"type:text" json:"-"`
+	LeaseID             string        `gorm:"size:64;index" json:"-"`
+	ProcessingStartedAt *time.Time    `gorm:"index"`
+	LastAttemptAt       *time.Time    `gorm:"index"`
+	ProcessedAt         *time.Time    `gorm:"index"`
+	LastError           string        `gorm:"type:text"`
+	CreatedAt           time.Time
+	UpdatedAt           time.Time
 }
 
 func (PaymentWebhookEvent) TableName() string { return "payment_webhook_events" }
@@ -68,8 +84,16 @@ type PaymentSubscription struct {
 	CurrentPeriodEnd       time.Time          `gorm:"index"`
 	CancelAt               *time.Time         `gorm:"index"`
 	CancelAtPeriodEnd      bool               `gorm:"not null;default:false"`
+	ProviderData           string             `gorm:"type:text" json:"-"`
 	CreatedAt              time.Time
 	UpdatedAt              time.Time
 }
 
 func (PaymentSubscription) TableName() string { return "payment_subscriptions" }
+
+type PaymentModuleMigration struct {
+	Version   int `gorm:"primaryKey"`
+	AppliedAt time.Time
+}
+
+func (PaymentModuleMigration) TableName() string { return "payment_module_migrations" }

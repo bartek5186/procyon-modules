@@ -26,7 +26,13 @@ type paymentSystemService interface {
 	CreatePortal(context.Context, string, models.PaymentPortalInput) (string, error)
 	Notify(context.Context, string, []byte, string) error
 	VerifyStorePurchase(context.Context, string, string, models.PaymentStoreVerificationInput) error
-	ListSubscriptions(context.Context, string) ([]models.PaymentSubscriptionResponse, error)
+	ListSubscriptions(context.Context, string, int, int) ([]models.PaymentSubscriptionResponse, error)
+	PaymentHistory(context.Context, string, int, int) ([]models.PaymentEventResponse, error)
+	Entitlement(context.Context, string, string) (models.PaymentEntitlementResponse, error)
+	ProviderStatuses() []models.PaymentProviderStatus
+	FailedWebhooks(context.Context, int, int) ([]models.PaymentWebhookResponse, error)
+	RetryWebhook(context.Context, string, string) error
+	Reconcile(context.Context) error
 }
 
 type PaymentSystemController struct {
@@ -55,6 +61,7 @@ func (c *PaymentSystemController) CreateCheckout(ctx echo.Context) error {
 	if err := ctx.Bind(&input); err != nil {
 		return apierr.BadRequest("invalid request")
 	}
+	input.IdempotencyKey = strings.TrimSpace(ctx.Request().Header.Get("Idempotency-Key"))
 	if err := ctx.Validate(&input); err != nil {
 		return apierr.Wrap(err, http.StatusBadRequest, "validation_failed", "validation failed")
 	}
@@ -74,6 +81,7 @@ func (c *PaymentSystemController) CreateSubscription(ctx echo.Context) error {
 	if err := ctx.Bind(&input); err != nil {
 		return apierr.BadRequest("invalid request")
 	}
+	input.IdempotencyKey = strings.TrimSpace(ctx.Request().Header.Get("Idempotency-Key"))
 	if err := ctx.Validate(&input); err != nil {
 		return apierr.Wrap(err, http.StatusBadRequest, "validation_failed", "validation failed")
 	}
@@ -89,7 +97,14 @@ func (c *PaymentSystemController) SubscriptionList(ctx echo.Context) error {
 	if !ok {
 		return apierr.Unauthorized("unauthorized")
 	}
-	items, err := c.service.ListSubscriptions(ctx.Request().Context(), identityID)
+	var query models.PaymentSubscriptionQuery
+	if err := ctx.Bind(&query); err != nil {
+		return apierr.BadRequest("invalid query")
+	}
+	if err := ctx.Validate(&query); err != nil {
+		return apierr.Wrap(err, http.StatusBadRequest, "validation_failed", "validation failed")
+	}
+	items, err := c.service.ListSubscriptions(ctx.Request().Context(), identityID, query.Limit, query.Offset)
 	if err != nil {
 		return paymentHTTPError(err)
 	}
@@ -142,6 +157,9 @@ func (c *PaymentSystemController) VerifyStorePurchase(ctx echo.Context) error {
 	if err := ctx.Bind(&input); err != nil {
 		return apierr.BadRequest("invalid request")
 	}
+	if err := ctx.Validate(&input); err != nil {
+		return apierr.Wrap(err, http.StatusBadRequest, "validation_failed", "validation failed")
+	}
 	if err := c.service.VerifyStorePurchase(ctx.Request().Context(), ctx.Param("provider"), identityID, input); err != nil {
 		return paymentHTTPError(err)
 	}
@@ -158,12 +176,92 @@ func (c *PaymentSystemController) Notify(ctx echo.Context) error {
 	signature := ""
 	if provider == "stripe" {
 		signature = ctx.Request().Header.Get("Stripe-Signature")
+	} else if provider == "google" {
+		signature = ctx.Request().Header.Get("Authorization")
 	}
 	if err := c.service.Notify(ctx.Request().Context(), provider, payload, signature); err != nil {
 		c.logger.Warn("payment webhook failed", zap.String("provider", provider), zap.Error(err))
 		return paymentHTTPError(err)
 	}
 	return ctx.NoContent(http.StatusOK)
+}
+
+func (c *PaymentSystemController) PaymentHistory(ctx echo.Context) error {
+	identityID, _, ok := paymentIdentity(ctx)
+	if !ok {
+		return apierr.Unauthorized("unauthorized")
+	}
+	var query models.PaymentHistoryQuery
+	if err := ctx.Bind(&query); err != nil {
+		return apierr.BadRequest("invalid query")
+	}
+	if err := ctx.Validate(&query); err != nil {
+		return apierr.Wrap(err, http.StatusBadRequest, "validation_failed", "validation failed")
+	}
+	items, err := c.service.PaymentHistory(ctx.Request().Context(), identityID, query.Limit, query.Offset)
+	if err != nil {
+		return paymentHTTPError(err)
+	}
+	return ctx.JSON(http.StatusOK, map[string]any{"items": items})
+}
+
+func (c *PaymentSystemController) Entitlement(ctx echo.Context) error {
+	identityID, _, ok := paymentIdentity(ctx)
+	if !ok {
+		return apierr.Unauthorized("unauthorized")
+	}
+	var query models.PaymentEntitlementQuery
+	if err := ctx.Bind(&query); err != nil {
+		return apierr.BadRequest("invalid query")
+	}
+	if err := ctx.Validate(&query); err != nil {
+		return apierr.Wrap(err, http.StatusBadRequest, "validation_failed", "validation failed")
+	}
+	item, err := c.service.Entitlement(ctx.Request().Context(), identityID, query.PlanCode)
+	if err != nil {
+		return paymentHTTPError(err)
+	}
+	return ctx.JSON(http.StatusOK, item)
+}
+
+func (c *PaymentSystemController) ProviderStatus(ctx echo.Context) error {
+	return ctx.JSON(http.StatusOK, map[string]any{"items": c.service.ProviderStatuses()})
+}
+
+func (c *PaymentSystemController) FailedWebhooks(ctx echo.Context) error {
+	var query models.PaymentWebhookListQuery
+	if err := ctx.Bind(&query); err != nil {
+		return apierr.BadRequest("invalid query")
+	}
+	if err := ctx.Validate(&query); err != nil {
+		return apierr.Wrap(err, http.StatusBadRequest, "validation_failed", "validation failed")
+	}
+	items, err := c.service.FailedWebhooks(ctx.Request().Context(), query.Limit, query.Offset)
+	if err != nil {
+		return paymentHTTPError(err)
+	}
+	return ctx.JSON(http.StatusOK, map[string]any{"items": items})
+}
+
+func (c *PaymentSystemController) RetryWebhook(ctx echo.Context) error {
+	var input models.PaymentWebhookRetryInput
+	if err := ctx.Bind(&input); err != nil {
+		return apierr.BadRequest("invalid request")
+	}
+	if err := ctx.Validate(&input); err != nil {
+		return apierr.Wrap(err, http.StatusBadRequest, "validation_failed", "validation failed")
+	}
+	if err := c.service.RetryWebhook(ctx.Request().Context(), input.Provider, input.EventID); err != nil {
+		return paymentHTTPError(err)
+	}
+	return ctx.NoContent(http.StatusNoContent)
+}
+
+func (c *PaymentSystemController) Reconcile(ctx echo.Context) error {
+	if err := c.service.Reconcile(ctx.Request().Context()); err != nil {
+		return paymentHTTPError(err)
+	}
+	return ctx.NoContent(http.StatusNoContent)
 }
 
 func paymentIdentity(ctx echo.Context) (string, string, bool) {
@@ -186,15 +284,21 @@ func paymentIdentity(ctx echo.Context) (string, string, bool) {
 func paymentHTTPError(err error) error {
 	switch {
 	case errors.Is(err, services.ErrPaymentProviderUnsupported):
-		return apierr.BadRequest("payment provider is not enabled")
+		return apierr.New(http.StatusBadRequest, "payment_provider_disabled", "payment provider is not enabled")
 	case errors.Is(err, services.ErrPaymentCapabilityMissing):
-		return apierr.BadRequest("payment capability is not supported")
+		return apierr.New(http.StatusBadRequest, "payment_capability_unsupported", "payment capability is not supported")
 	case errors.Is(err, services.ErrPaymentInvalidSignature):
-		return apierr.BadRequest("invalid webhook signature")
+		return apierr.New(http.StatusBadRequest, "payment_signature_invalid", "invalid webhook signature")
 	case errors.Is(err, services.ErrPaymentInvalidReturnURL):
-		return apierr.BadRequest("return URL is not allowed")
+		return apierr.New(http.StatusBadRequest, "payment_return_url_rejected", "return URL is not allowed")
 	case errors.Is(err, services.ErrPaymentSubscriptionActive):
-		return apierr.Conflict("an active subscription already exists")
+		return apierr.New(http.StatusConflict, "payment_subscription_active", "an active subscription already exists")
+	case errors.Is(err, models.ErrPaymentOwnershipConflict):
+		return apierr.New(http.StatusConflict, "payment_ownership_conflict", "payment resource belongs to another identity")
+	case errors.Is(err, models.ErrPaymentProductRejected):
+		return apierr.New(http.StatusBadRequest, "payment_product_rejected", "payment product is not allowed")
+	case errors.Is(err, models.ErrPaymentIdempotencyKey):
+		return apierr.New(http.StatusBadRequest, "payment_idempotency_key_invalid", "valid Idempotency-Key header is required")
 	case errors.Is(err, gorm.ErrRecordNotFound):
 		return apierr.NotFound("payment resource not found")
 	default:

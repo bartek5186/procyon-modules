@@ -2,7 +2,7 @@
   "schema_version": 1,
   "kind": "go-plugin",
   "name": "payment-system",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Provider-based payments and subscriptions",
   "minimum_cli": "0.3.0",
   "minimum_core": "0.3.0",
@@ -16,6 +16,26 @@
       "name": "PAYMENT_ALLOWED_RETURN_ORIGINS",
       "default": "http://localhost,http://127.0.0.1",
       "description": "Comma-separated origins allowed for payment return URLs."
+    },
+    {
+      "name": "PAYMENT_PRODUCTS_FILE",
+      "default": "./config/payment-products.json",
+      "description": "Path to the server-side payment product catalogue."
+    },
+    {
+      "name": "PAYMENT_WEBHOOK_LEASE",
+      "default": "5m",
+      "description": "Time after which an interrupted webhook may be reclaimed."
+    },
+    {
+      "name": "PAYMENT_WEBHOOK_RETENTION",
+      "default": "720h",
+      "description": "Retention time for successfully processed webhook payloads."
+    },
+    {
+      "name": "PAYMENT_RECONCILE_EVERY",
+      "default": "6h",
+      "description": "Provider reconciliation interval."
     },
     {
       "name": "STRIPE_SECRET_KEY",
@@ -45,6 +65,17 @@
       "name": "GOOGLE_PLAY_PACKAGE_NAME",
       "description": "Android application package name.",
       "providers": ["google"]
+    },
+    {
+      "name": "GOOGLE_PLAY_PUBSUB_AUDIENCE",
+      "description": "Expected audience of the authenticated Google Pub/Sub push endpoint.",
+      "providers": ["google"]
+    },
+    {
+      "name": "PAYMENT_DATA_ENCRYPTION_KEY",
+      "description": "Base64-encoded 32-byte key used to encrypt Google purchase tokens at rest.",
+      "providers": ["google"],
+      "secret": true
     },
     {
       "name": "APPLE_APP_STORE_CONFIG_FILE",

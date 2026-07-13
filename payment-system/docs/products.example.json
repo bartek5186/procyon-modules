@@ -1,0 +1,29 @@
+[
+  {
+    "provider": "stripe",
+    "product_id": "price_replace_me",
+    "plan_code": "premium_monthly",
+    "kind": "subscription",
+    "currency": "pln",
+    "amount_minor": 2999,
+    "interval": "1-month"
+  },
+  {
+    "provider": "google",
+    "product_id": "premium_monthly",
+    "plan_code": "premium_monthly",
+    "kind": "subscription",
+    "currency": "PLN",
+    "amount_minor": 2999,
+    "interval": "1-month"
+  },
+  {
+    "provider": "apple",
+    "product_id": "premium_monthly",
+    "plan_code": "premium_monthly",
+    "kind": "subscription",
+    "currency": "PLN",
+    "amount_minor": 2999,
+    "interval": "1-month"
+  }
+]
