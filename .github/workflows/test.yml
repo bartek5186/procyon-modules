@@ -24,4 +24,52 @@ jobs:
         with:
           go-version-file: ${{ matrix.module }}/go.mod
           cache-dependency-path: ${{ matrix.module }}/go.sum
-      - run: go test ./...
+      - run: go vet ./...
+      - run: go test -race -coverprofile=coverage.out ./...
+      - name: Enforce payment critical-path coverage
+        if: matrix.module == 'payment-system'
+        run: |
+          total=$(go tool cover -func=coverage.out | awk '/^total:/ {gsub("%", "", $3); print $3}')
+          awk -v total="$total" 'BEGIN { if (total + 0 < 25) exit 1 }'
+
+  payment-databases:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: payment
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d payment"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: payment
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h localhost -proot"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    defaults:
+      run:
+        working-directory: payment-system
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: payment-system/go.mod
+          cache-dependency-path: payment-system/go.sum
+      - run: go test -run TestPaymentMigrationsOnConfiguredDatabases ./...
+        env:
+          PAYMENT_TEST_POSTGRES_DSN: host=127.0.0.1 user=postgres password=postgres dbname=payment port=5432 sslmode=disable
+          PAYMENT_TEST_MYSQL_DSN: root:root@tcp(127.0.0.1:3306)/payment?charset=utf8mb4&parseTime=True&loc=UTC

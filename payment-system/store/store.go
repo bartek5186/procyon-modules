@@ -2,7 +2,10 @@ package store
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/bartek5186/procyon-modules/payment-system/models"
@@ -18,8 +21,17 @@ func NewPaymentSystemStore(db *gorm.DB) *PaymentSystemStore {
 	return &PaymentSystemStore{db: db}
 }
 
-func (s *PaymentSystemStore) BeginWebhook(ctx context.Context, provider, eventID, eventType string) (bool, error) {
-	event := models.PaymentWebhookEvent{Provider: provider, EventID: eventID, EventType: eventType}
+func (s *PaymentSystemStore) ClaimWebhook(ctx context.Context, event models.PaymentWebhookEvent, lease time.Duration) (string, bool, error) {
+	now := time.Now().UTC()
+	leaseID, err := webhookLeaseID()
+	if err != nil {
+		return "", false, err
+	}
+	event.Status = models.WebhookStatusProcessing
+	event.Attempts = 1
+	event.ProcessingStartedAt = &now
+	event.LastAttemptAt = &now
+	event.LeaseID = leaseID
 	result := s.db.WithContext(ctx).Clauses(clause.OnConflict{
 		Columns: []clause.Column{
 			{Name: "provider"},
@@ -28,29 +40,91 @@ func (s *PaymentSystemStore) BeginWebhook(ctx context.Context, provider, eventID
 		DoNothing: true,
 	}).Create(&event)
 	if result.Error != nil || result.RowsAffected == 1 {
-		return result.RowsAffected == 1, result.Error
+		return leaseID, result.RowsAffected == 1, result.Error
 	}
-	var existing models.PaymentWebhookEvent
-	if err := s.db.WithContext(ctx).
-		Where("provider = ? AND event_id = ?", provider, eventID).
-		First(&existing).Error; err != nil {
-		return false, err
+	cutoff := now.Add(-lease)
+	updates := map[string]any{
+		"status": models.WebhookStatusProcessing, "processing_started_at": &now,
+		"last_attempt_at": &now, "last_error": "", "payload": event.Payload,
+		"signature": event.Signature, "event_type": event.EventType,
+		"lease_id": leaseID, "attempts": gorm.Expr("attempts + 1"),
 	}
-	return existing.ProcessedAt == nil && existing.LastError != "", nil
+	claimed := s.db.WithContext(ctx).Model(&models.PaymentWebhookEvent{}).
+		Where("provider = ? AND event_id = ?", event.Provider, event.EventID).
+		Where("status = ? OR (status = ? AND processing_started_at < ?)",
+			models.WebhookStatusFailed, models.WebhookStatusProcessing, cutoff).
+		Updates(updates)
+	if claimed.Error != nil || claimed.RowsAffected == 0 {
+		return "", false, claimed.Error
+	}
+	return leaseID, true, nil
 }
 
-func (s *PaymentSystemStore) FinishWebhook(ctx context.Context, provider, eventID string, processErr error) error {
-	updates := map[string]any{"updated_at": time.Now().UTC()}
+func (s *PaymentSystemStore) FinishWebhook(ctx context.Context, provider, eventID, leaseID string, processErr error) error {
+	updates := map[string]any{"updated_at": time.Now().UTC(), "processing_started_at": nil}
 	if processErr == nil {
 		now := time.Now().UTC()
 		updates["processed_at"] = &now
 		updates["last_error"] = ""
+		updates["status"] = models.WebhookStatusSucceeded
 	} else {
-		updates["last_error"] = processErr.Error()
+		message := processErr.Error()
+		if len(message) > 4096 {
+			message = message[:4096]
+		}
+		updates["last_error"] = message
+		updates["status"] = models.WebhookStatusFailed
 	}
+	result := s.db.WithContext(ctx).Model(&models.PaymentWebhookEvent{}).
+		Where("provider = ? AND event_id = ? AND status = ? AND lease_id = ?", provider, eventID, models.WebhookStatusProcessing, leaseID).
+		Updates(updates)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return models.ErrPaymentWebhookLeaseLost
+	}
+	return nil
+}
+
+func webhookLeaseID() (string, error) {
+	raw := make([]byte, 16)
+	if _, err := rand.Read(raw); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(raw), nil
+}
+
+func (s *PaymentSystemStore) GetWebhook(ctx context.Context, provider, eventID string) (models.PaymentWebhookEvent, error) {
+	var event models.PaymentWebhookEvent
+	err := s.db.WithContext(ctx).Where("provider = ? AND event_id = ?", provider, eventID).First(&event).Error
+	return event, err
+}
+
+func (s *PaymentSystemStore) MarkWebhookForRetry(ctx context.Context, provider, eventID string) error {
+	result := s.db.WithContext(ctx).Model(&models.PaymentWebhookEvent{}).
+		Where("provider = ? AND event_id = ? AND status = ?", provider, eventID, models.WebhookStatusFailed).
+		Updates(map[string]any{"processing_started_at": nil, "updated_at": time.Now().UTC()})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
+}
+
+func (s *PaymentSystemStore) ListFailedWebhooks(ctx context.Context, limit, offset int) ([]models.PaymentWebhookEvent, error) {
+	var events []models.PaymentWebhookEvent
+	err := s.db.WithContext(ctx).Where("status = ?", models.WebhookStatusFailed).
+		Order("updated_at DESC").Limit(limit).Offset(offset).Find(&events).Error
+	return events, err
+}
+
+func (s *PaymentSystemStore) CleanupWebhookPayloads(ctx context.Context, before time.Time) error {
 	return s.db.WithContext(ctx).Model(&models.PaymentWebhookEvent{}).
-		Where("provider = ? AND event_id = ?", provider, eventID).
-		Updates(updates).Error
+		Where("status = ? AND processed_at < ?", models.WebhookStatusSucceeded, before).
+		Updates(map[string]any{"payload": nil, "signature": ""}).Error
 }
 
 func (s *PaymentSystemStore) UpsertPayment(ctx context.Context, payment models.PaymentEvent) error {
@@ -91,6 +165,12 @@ func (s *PaymentSystemStore) UpsertPayment(ctx context.Context, payment models.P
 	})
 }
 
+func (s *PaymentSystemStore) GetPayment(ctx context.Context, provider, externalID string) (models.PaymentEvent, error) {
+	var payment models.PaymentEvent
+	err := s.db.WithContext(ctx).Where("provider = ? AND external_id = ?", provider, externalID).First(&payment).Error
+	return payment, err
+}
+
 func paymentStatusRank(status models.PaymentStatus) int {
 	switch status {
 	case models.PaymentStatusPending:
@@ -99,24 +179,50 @@ func paymentStatusRank(status models.PaymentStatus) int {
 		return 2
 	case models.PaymentStatusCanceled, models.PaymentStatusFailed:
 		return 3
-	case models.PaymentStatusRefunded:
+	case models.PaymentStatusDisputed:
 		return 4
+	case models.PaymentStatusRefunded:
+		return 5
 	default:
 		return 0
 	}
 }
 
 func (s *PaymentSystemStore) UpsertSubscription(ctx context.Context, subscription models.PaymentSubscription) error {
-	return s.db.WithContext(ctx).Clauses(clause.OnConflict{
+	result := s.db.WithContext(ctx).Clauses(clause.OnConflict{
 		Columns: []clause.Column{
 			{Name: "provider"},
 			{Name: "external_subscription_id"},
 		},
-		DoUpdates: clause.AssignmentColumns([]string{
-			"identity_id", "customer_id", "plan_code", "status", "current_period_start",
-			"current_period_end", "cancel_at", "cancel_at_period_end", "updated_at",
-		}),
-	}).Create(&subscription).Error
+		DoNothing: true,
+	}).Create(&subscription)
+	if result.Error != nil || result.RowsAffected == 1 {
+		return result.Error
+	}
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var existing models.PaymentSubscription
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("provider = ? AND external_subscription_id = ?", subscription.Provider, subscription.ExternalSubscriptionID).
+			First(&existing).Error; err != nil {
+			return err
+		}
+		if existing.IdentityID != "" && subscription.IdentityID != "" && existing.IdentityID != subscription.IdentityID {
+			return models.ErrPaymentOwnershipConflict
+		}
+		updates := map[string]any{
+			"customer_id": subscription.CustomerID, "plan_code": subscription.PlanCode,
+			"status": subscription.Status, "current_period_start": subscription.CurrentPeriodStart,
+			"current_period_end": subscription.CurrentPeriodEnd, "cancel_at": subscription.CancelAt,
+			"cancel_at_period_end": subscription.CancelAtPeriodEnd, "updated_at": time.Now().UTC(),
+		}
+		if existing.IdentityID == "" && subscription.IdentityID != "" {
+			updates["identity_id"] = subscription.IdentityID
+		}
+		if subscription.ProviderData != "" {
+			updates["provider_data"] = subscription.ProviderData
+		}
+		return tx.Model(&models.PaymentSubscription{}).Where("id = ?", existing.ID).Updates(updates).Error
+	})
 }
 
 func (s *PaymentSystemStore) HasActiveSubscription(ctx context.Context, identityID string) (bool, error) {
@@ -128,10 +234,35 @@ func (s *PaymentSystemStore) HasActiveSubscription(ctx context.Context, identity
 	return count > 0, err
 }
 
-func (s *PaymentSystemStore) ListSubscriptions(ctx context.Context, identityID string) ([]models.PaymentSubscription, error) {
+func (s *PaymentSystemStore) ActiveEntitlement(ctx context.Context, identityID, planCode string) (models.PaymentSubscription, error) {
+	query := s.db.WithContext(ctx).Where("identity_id = ?", identityID).
+		Where("status IN ?", []models.SubscriptionStatus{models.SubscriptionStatusActive, models.SubscriptionStatusTrialing}).
+		Where("current_period_end > ?", time.Now().UTC())
+	if strings.TrimSpace(planCode) != "" {
+		query = query.Where("plan_code = ?", strings.TrimSpace(planCode))
+	}
+	var subscription models.PaymentSubscription
+	err := query.Order("current_period_end DESC").First(&subscription).Error
+	return subscription, err
+}
+
+func (s *PaymentSystemStore) ListPayments(ctx context.Context, identityID string, limit, offset int) ([]models.PaymentEvent, error) {
+	var events []models.PaymentEvent
+	err := s.db.WithContext(ctx).Where("identity_id = ?", identityID).
+		Order("occurred_at DESC").Limit(limit).Offset(offset).Find(&events).Error
+	return events, err
+}
+
+func (s *PaymentSystemStore) ListSubscriptionsAfter(ctx context.Context, afterID uint, limit int) ([]models.PaymentSubscription, error) {
+	var subscriptions []models.PaymentSubscription
+	err := s.db.WithContext(ctx).Where("id > ?", afterID).Order("id ASC").Limit(limit).Find(&subscriptions).Error
+	return subscriptions, err
+}
+
+func (s *PaymentSystemStore) ListSubscriptions(ctx context.Context, identityID string, limit, offset int) ([]models.PaymentSubscription, error) {
 	var subscriptions []models.PaymentSubscription
 	err := s.db.WithContext(ctx).Where("identity_id = ?", identityID).
-		Order("current_period_end DESC").Find(&subscriptions).Error
+		Order("current_period_end DESC").Limit(limit).Offset(offset).Find(&subscriptions).Error
 	return subscriptions, err
 }
 
@@ -139,6 +270,13 @@ func (s *PaymentSystemStore) GetSubscription(ctx context.Context, provider, exte
 	var subscription models.PaymentSubscription
 	err := s.db.WithContext(ctx).
 		Where("provider = ? AND external_subscription_id = ? AND identity_id = ?", provider, externalID, identityID).
+		First(&subscription).Error
+	return subscription, err
+}
+
+func (s *PaymentSystemStore) GetSubscriptionByExternal(ctx context.Context, provider, externalID string) (models.PaymentSubscription, error) {
+	var subscription models.PaymentSubscription
+	err := s.db.WithContext(ctx).Where("provider = ? AND external_subscription_id = ?", provider, externalID).
 		First(&subscription).Error
 	return subscription, err
 }

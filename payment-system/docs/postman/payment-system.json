@@ -1,0 +1,128 @@
+{
+  "module": "payment-system",
+  "version": 1,
+  "description": "Safe example payloads for generated Payment System routes.",
+  "examples": [
+    {
+      "key": "POST /v1/payments/checkout",
+      "name": "Create one-time Stripe checkout",
+      "request": {
+        "headers": {"Idempotency-Key": "{{$guid}}"},
+        "body": {
+          "provider": "stripe",
+          "price_id": "price_replace_me",
+          "success_url": "https://app.example.com/payment/success",
+          "cancel_url": "https://app.example.com/payment/cancel"
+        }
+      },
+      "response": {
+        "status": 201,
+        "body": {"checkout_url": "https://checkout.stripe.com/example"}
+      }
+    },
+    {
+      "key": "POST /v1/payments/subscriptions/checkout",
+      "name": "Create Stripe subscription checkout",
+      "request": {
+        "headers": {"Idempotency-Key": "{{$guid}}"},
+        "body": {
+          "provider": "stripe",
+          "price_id": "price_replace_me",
+          "success_url": "https://app.example.com/payment/success",
+          "cancel_url": "https://app.example.com/payment/cancel"
+        }
+      },
+      "response": {
+        "status": 201,
+        "body": {"checkout_url": "https://checkout.stripe.com/example"}
+      }
+    },
+    {
+      "key": "POST /v1/payments/verify/google",
+      "name": "Verify Google Play subscription",
+      "request": {
+        "body": {"product_id": "premium_monthly", "purchase_token": "replace-me"}
+      },
+      "response": {"status": 204}
+    },
+    {
+      "key": "POST /v1/payments/verify/apple",
+      "name": "Verify Apple StoreKit 2 transaction",
+      "request": {"body": {"signed_payload": "replace-with-signed-transaction"}},
+      "response": {"status": 204}
+    },
+    {
+      "key": "GET /v1/payments/entitlement",
+      "name": "Check premium entitlement",
+      "request": {"query": {"plan_code": "premium_monthly"}},
+      "response": {
+        "status": 200,
+        "body": {"active": true, "provider": "stripe", "plan_code": "premium_monthly", "status": "ACTIVE"}
+      }
+    },
+    {
+      "key": "GET /v1/payments/subscriptions",
+      "name": "List owned subscriptions",
+      "request": {"query": {"limit": "50", "offset": "0"}},
+      "response": {"status": 200, "body": {"items": []}}
+    },
+    {
+      "key": "GET /v1/payments/history",
+      "name": "List payment history",
+      "request": {"query": {"limit": "50", "offset": "0"}},
+      "response": {"status": 200, "body": {"items": []}}
+    },
+    {
+      "key": "POST /v1/payments/subscriptions/cancel",
+      "name": "Cancel subscription at period end",
+      "request": {"body": {"provider": "stripe", "subscription_id": "sub_replace_me", "cancel_at_period_end": true}},
+      "response": {"status": 204}
+    },
+    {
+      "key": "POST /v1/payments/portal",
+      "name": "Create Stripe billing portal session",
+      "request": {"body": {"provider": "stripe", "return_url": "https://app.example.com/billing"}},
+      "response": {"status": 201, "body": {"portal_url": "https://billing.stripe.com/example"}}
+    },
+    {
+      "key": "POST /v1/payments/webhooks/stripe",
+      "name": "Stripe signed webhook",
+      "request": {"headers": {"Stripe-Signature": "replace-with-stripe-signature"}, "body": {"id": "evt_replace_me", "type": "payment_intent.succeeded"}},
+      "response": {"status": 200}
+    },
+    {
+      "key": "POST /v1/payments/webhooks/google",
+      "name": "Google Play RTDN Pub/Sub push",
+      "request": {"headers": {"Authorization": "Bearer replace-with-google-oidc-token"}, "body": {"message": {"messageId": "replace-me", "data": "base64-rtdn"}}},
+      "response": {"status": 200}
+    },
+    {
+      "key": "POST /v1/payments/webhooks/apple",
+      "name": "Apple App Store Server Notification V2",
+      "request": {"body": {"signedPayload": "replace-with-apple-signed-payload"}},
+      "response": {"status": 200}
+    },
+    {
+      "key": "GET /v1/admin/payments/providers",
+      "name": "Payment provider readiness",
+      "response": {"status": 200, "body": {"items": [{"name": "stripe", "ready": true, "requests": 0, "failures": 0, "average_latency_ms": 0}]}}
+    },
+    {
+      "key": "GET /v1/admin/payments/webhooks/failed",
+      "name": "List failed payment webhooks",
+      "request": {"query": {"limit": "50", "offset": "0"}},
+      "response": {"status": 200, "body": {"items": []}}
+    },
+    {
+      "key": "POST /v1/admin/payments/webhooks/retry",
+      "name": "Retry failed payment webhook",
+      "request": {"body": {"provider": "stripe", "event_id": "evt_replace_me"}},
+      "response": {"status": 204}
+    },
+    {
+      "key": "POST /v1/admin/payments/reconcile",
+      "name": "Run payment reconciliation",
+      "response": {"status": 204}
+    }
+  ]
+}
