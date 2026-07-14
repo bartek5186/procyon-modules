@@ -55,8 +55,10 @@ internals and credentials are never returned.
 
 ## Postman documentation source
 
-The generated Postman collection uses two versioned sources from this module:
+The generated Postman collection uses three versioned sources from this module:
 
+- `docs/postman/overview.md` populates the **Payment System → Overview** tab
+  with the shared architecture and provider-specific flows.
 - Go documentation comments above handlers in `controllers/controller.go`
   populate the request **Docs** tab.
 - `docs/postman/payment-system.json` contains named request and response

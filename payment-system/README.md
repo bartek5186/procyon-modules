@@ -55,6 +55,8 @@ the plugin removes its runtime wiring but intentionally preserves payment data.
 
 See [configuration](docs/CONFIGURATION.md), [API](docs/API.md),
 [operations](docs/OPERATIONS.md), and [data handling](docs/DATA_HANDLING.md).
+The provider flow documentation shown in Postman's module **Overview** is kept
+in [docs/postman/overview.md](docs/postman/overview.md).
 
 ## Verification
 
