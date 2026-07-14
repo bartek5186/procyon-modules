@@ -1,127 +1,462 @@
 {
   "module": "payment-system",
-  "version": 1,
-  "description": "Safe example payloads for generated Payment System routes.",
+  "version": 2,
+  "description": "Named request and response examples for every Payment System route.",
   "examples": [
     {
+      "key": "GET /v1/payments/prices/stripe",
+      "name": "Stripe product catalog",
+      "default": true,
+      "request": {"path": {"provider": "stripe"}},
+      "response": {
+        "status": 200,
+        "body": {
+          "items": [
+            {
+              "id": "price_one_time_1000_points",
+              "amount_minor": 4999,
+              "currency": "pln",
+              "description": "Top up 1000 points",
+              "kind": "one_time",
+              "product_id": "prod_UsZhvLr2s9Ykoy",
+              "product_name": "Doladowanie 1000 pkt"
+            },
+            {
+              "id": "price_premium_monthly",
+              "amount_minor": 4999,
+              "currency": "pln",
+              "description": "Premium monthly subscription",
+              "kind": "subscription",
+              "interval": "month",
+              "product_id": "prod_UsZMiOvUVvNBUb",
+              "product_name": "Premium"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "key": "GET /v1/payments/prices/google",
+      "name": "Google Play product catalog",
+      "request": {"path": {"provider": "google"}},
+      "response": {
+        "status": 200,
+        "body": {
+          "items": [
+            {
+              "id": "premium_monthly",
+              "amount_minor": 4999,
+              "currency": "pln",
+              "description": "Premium monthly subscription",
+              "kind": "subscription",
+              "interval": "month",
+              "product_id": "premium_monthly",
+              "product_name": "Premium"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "key": "GET /v1/payments/prices/apple",
+      "name": "Apple App Store product catalog",
+      "request": {"path": {"provider": "apple"}},
+      "response": {
+        "status": 200,
+        "body": {
+          "items": [
+            {
+              "id": "com.example.premium.monthly",
+              "amount_minor": 4999,
+              "currency": "pln",
+              "description": "Premium monthly subscription",
+              "kind": "subscription",
+              "interval": "month",
+              "product_id": "com.example.premium.monthly",
+              "product_name": "Premium"
+            }
+          ]
+        }
+      }
+    },
+    {
       "key": "POST /v1/payments/checkout",
-      "name": "Create one-time Stripe checkout",
+      "name": "Stripe one-time checkout",
+      "default": true,
       "request": {
         "headers": {"Idempotency-Key": "{{$guid}}"},
         "body": {
           "provider": "stripe",
-          "price_id": "price_replace_me",
+          "price_id": "price_one_time_1000_points",
           "success_url": "https://app.example.com/payment/success",
           "cancel_url": "https://app.example.com/payment/cancel"
         }
       },
       "response": {
         "status": 201,
-        "body": {"checkout_url": "https://checkout.stripe.com/example"}
+        "body": {"checkout_url": "https://checkout.stripe.com/c/pay/cs_test_example"}
+      }
+    },
+    {
+      "key": "POST /v1/payments/checkout",
+      "name": "Rejected catalog product",
+      "request": {
+        "headers": {"Idempotency-Key": "{{$guid}}"},
+        "body": {
+          "provider": "stripe",
+          "price_id": "price_not_in_catalog",
+          "success_url": "https://app.example.com/payment/success",
+          "cancel_url": "https://app.example.com/payment/cancel"
+        }
+      },
+      "response": {
+        "status": 400,
+        "body": {
+          "error": {"code": "payment_product_rejected", "message": "payment product is not allowed"},
+          "request_id": "req_example"
+        }
       }
     },
     {
       "key": "POST /v1/payments/subscriptions/checkout",
-      "name": "Create Stripe subscription checkout",
+      "name": "Stripe monthly subscription checkout",
+      "default": true,
       "request": {
         "headers": {"Idempotency-Key": "{{$guid}}"},
         "body": {
           "provider": "stripe",
-          "price_id": "price_replace_me",
+          "price_id": "price_premium_monthly",
           "success_url": "https://app.example.com/payment/success",
           "cancel_url": "https://app.example.com/payment/cancel"
         }
       },
       "response": {
         "status": 201,
-        "body": {"checkout_url": "https://checkout.stripe.com/example"}
+        "body": {"checkout_url": "https://checkout.stripe.com/c/pay/cs_test_subscription_example"}
+      }
+    },
+    {
+      "key": "POST /v1/payments/subscriptions/checkout",
+      "name": "Active subscription conflict",
+      "request": {
+        "headers": {"Idempotency-Key": "{{$guid}}"},
+        "body": {
+          "provider": "stripe",
+          "price_id": "price_premium_monthly",
+          "success_url": "https://app.example.com/payment/success",
+          "cancel_url": "https://app.example.com/payment/cancel"
+        }
+      },
+      "response": {
+        "status": 409,
+        "body": {
+          "error": {"code": "payment_subscription_active", "message": "an active subscription already exists"},
+          "request_id": "req_example"
+        }
+      }
+    },
+    {
+      "key": "GET /v1/payments/subscriptions",
+      "name": "Stripe active subscription",
+      "default": true,
+      "request": {"query": {"limit": "50", "offset": "0"}},
+      "response": {
+        "status": 200,
+        "body": {
+          "items": [
+            {
+              "provider": "stripe",
+              "subscription_id": "sub_1Example",
+              "plan_code": "premium_monthly",
+              "status": "ACTIVE",
+              "current_period_start": "2026-07-01T10:00:00Z",
+              "current_period_end": "2026-08-01T10:00:00Z",
+              "cancel_at_period_end": false
+            }
+          ]
+        }
+      }
+    },
+    {
+      "key": "GET /v1/payments/subscriptions",
+      "name": "Google Play subscription",
+      "request": {"query": {"limit": "50", "offset": "0"}},
+      "response": {
+        "status": 200,
+        "body": {
+          "items": [
+            {
+              "provider": "google",
+              "subscription_id": "GPA.3300-1234-5678-90123",
+              "plan_code": "premium_monthly",
+              "status": "ACTIVE",
+              "current_period_start": "2026-07-01T10:00:00Z",
+              "current_period_end": "2026-08-01T10:00:00Z",
+              "cancel_at_period_end": false
+            }
+          ]
+        }
+      }
+    },
+    {
+      "key": "GET /v1/payments/subscriptions",
+      "name": "Apple subscription pending expiry",
+      "request": {"query": {"limit": "50", "offset": "0"}},
+      "response": {
+        "status": 200,
+        "body": {
+          "items": [
+            {
+              "provider": "apple",
+              "subscription_id": "2000000123456789",
+              "plan_code": "com.example.premium.monthly",
+              "status": "ACTIVE",
+              "current_period_start": "2026-07-01T10:00:00Z",
+              "current_period_end": "2026-08-01T10:00:00Z",
+              "cancel_at_period_end": true
+            }
+          ]
+        }
+      }
+    },
+    {
+      "key": "POST /v1/payments/subscriptions/cancel",
+      "name": "Cancel Stripe subscription at period end",
+      "default": true,
+      "request": {
+        "body": {"provider": "stripe", "subscription_id": "sub_1Example", "cancel_at_period_end": true}
+      },
+      "response": {"status": 204}
+    },
+    {
+      "key": "POST /v1/payments/subscriptions/cancel",
+      "name": "Cancel Stripe subscription immediately",
+      "request": {
+        "body": {"provider": "stripe", "subscription_id": "sub_1Example", "cancel_at_period_end": false}
+      },
+      "response": {"status": 204}
+    },
+    {
+      "key": "POST /v1/payments/portal",
+      "name": "Stripe billing portal",
+      "default": true,
+      "request": {"body": {"provider": "stripe", "return_url": "https://app.example.com/billing"}},
+      "response": {
+        "status": 201,
+        "body": {"portal_url": "https://billing.stripe.com/p/session/test_example"}
       }
     },
     {
       "key": "POST /v1/payments/verify/google",
-      "name": "Verify Google Play subscription",
+      "name": "Google Play subscription purchase",
+      "default": true,
       "request": {
-        "body": {"product_id": "premium_monthly", "purchase_token": "replace-me"}
+        "path": {"provider": "google"},
+        "body": {
+          "package_name": "com.example.app",
+          "product_id": "premium_monthly",
+          "purchase_token": "google-play-purchase-token"
+        }
       },
       "response": {"status": 204}
     },
     {
       "key": "POST /v1/payments/verify/apple",
-      "name": "Verify Apple StoreKit 2 transaction",
-      "request": {"body": {"signed_payload": "replace-with-signed-transaction"}},
+      "name": "Apple StoreKit 2 transaction",
+      "request": {
+        "path": {"provider": "apple"},
+        "body": {"signed_payload": "eyJhbGciOiJFUzI1NiIsIng1YyI6WyJleGFtcGxlIl19.example.signature"}
+      },
       "response": {"status": 204}
-    },
-    {
-      "key": "GET /v1/payments/entitlement",
-      "name": "Check premium entitlement",
-      "request": {"query": {"plan_code": "premium_monthly"}},
-      "response": {
-        "status": 200,
-        "body": {"active": true, "provider": "stripe", "plan_code": "premium_monthly", "status": "ACTIVE"}
-      }
-    },
-    {
-      "key": "GET /v1/payments/subscriptions",
-      "name": "List owned subscriptions",
-      "request": {"query": {"limit": "50", "offset": "0"}},
-      "response": {"status": 200, "body": {"items": []}}
     },
     {
       "key": "GET /v1/payments/history",
-      "name": "List payment history",
+      "name": "Mixed provider payment history",
+      "default": true,
       "request": {"query": {"limit": "50", "offset": "0"}},
-      "response": {"status": 200, "body": {"items": []}}
+      "response": {
+        "status": 200,
+        "body": {
+          "items": [
+            {
+              "provider": "stripe",
+              "external_id": "pi_3Example",
+              "plan_code": "points_1000",
+              "status": "SUCCEEDED",
+              "kind": "one_time",
+              "amount_minor": 4999,
+              "currency": "pln",
+              "occurred_at": "2026-07-14T09:15:00Z"
+            },
+            {
+              "provider": "google",
+              "external_id": "GPA.3300-1234-5678-90123",
+              "subscription_id": "GPA.3300-1234-5678-90123",
+              "plan_code": "premium_monthly",
+              "status": "SUCCEEDED",
+              "kind": "subscription",
+              "amount_minor": 4999,
+              "currency": "pln",
+              "occurred_at": "2026-07-13T08:00:00Z"
+            }
+          ]
+        }
+      }
     },
     {
-      "key": "POST /v1/payments/subscriptions/cancel",
-      "name": "Cancel subscription at period end",
-      "request": {"body": {"provider": "stripe", "subscription_id": "sub_replace_me", "cancel_at_period_end": true}},
-      "response": {"status": 204}
+      "key": "GET /v1/payments/history",
+      "name": "Refunded Stripe payment",
+      "request": {"query": {"limit": "50", "offset": "0"}},
+      "response": {
+        "status": 200,
+        "body": {
+          "items": [
+            {
+              "provider": "stripe",
+              "external_id": "re_3Example",
+              "plan_code": "points_1000",
+              "status": "REFUNDED",
+              "kind": "refund",
+              "amount_minor": 4999,
+              "currency": "pln",
+              "occurred_at": "2026-07-14T11:00:00Z"
+            }
+          ]
+        }
+      }
     },
     {
-      "key": "POST /v1/payments/portal",
-      "name": "Create Stripe billing portal session",
-      "request": {"body": {"provider": "stripe", "return_url": "https://app.example.com/billing"}},
-      "response": {"status": 201, "body": {"portal_url": "https://billing.stripe.com/example"}}
+      "key": "GET /v1/payments/entitlement",
+      "name": "Active Stripe premium entitlement",
+      "default": true,
+      "request": {"query": {"plan_code": "premium_monthly"}},
+      "response": {
+        "status": 200,
+        "body": {
+          "active": true,
+          "provider": "stripe",
+          "plan_code": "premium_monthly",
+          "status": "ACTIVE",
+          "expires_at": "2026-08-01T10:00:00Z"
+        }
+      }
+    },
+    {
+      "key": "GET /v1/payments/entitlement",
+      "name": "Active Apple premium entitlement",
+      "request": {"query": {"plan_code": "com.example.premium.monthly"}},
+      "response": {
+        "status": 200,
+        "body": {
+          "active": true,
+          "provider": "apple",
+          "plan_code": "com.example.premium.monthly",
+          "status": "ACTIVE",
+          "expires_at": "2026-08-01T10:00:00Z"
+        }
+      }
+    },
+    {
+      "key": "GET /v1/payments/entitlement",
+      "name": "Inactive entitlement",
+      "request": {"query": {"plan_code": "premium_monthly"}},
+      "response": {"status": 200, "body": {"active": false}}
     },
     {
       "key": "POST /v1/payments/webhooks/stripe",
-      "name": "Stripe signed webhook",
-      "request": {"headers": {"Stripe-Signature": "replace-with-stripe-signature"}, "body": {"id": "evt_replace_me", "type": "payment_intent.succeeded"}},
+      "name": "Stripe payment succeeded webhook",
+      "default": true,
+      "request": {
+        "path": {"provider": "stripe"},
+        "headers": {"Stripe-Signature": "t=1720950000,v1=replace-with-valid-signature"},
+        "body": {
+          "id": "evt_1Example",
+          "type": "payment_intent.succeeded",
+          "data": {"object": {"id": "pi_3Example", "amount": 4999, "currency": "pln"}}
+        }
+      },
       "response": {"status": 200}
     },
     {
       "key": "POST /v1/payments/webhooks/google",
-      "name": "Google Play RTDN Pub/Sub push",
-      "request": {"headers": {"Authorization": "Bearer replace-with-google-oidc-token"}, "body": {"message": {"messageId": "replace-me", "data": "base64-rtdn"}}},
+      "name": "Google Play RTDN PubSub push",
+      "request": {
+        "path": {"provider": "google"},
+        "headers": {"Authorization": "Bearer replace-with-google-oidc-token"},
+        "body": {
+          "message": {
+            "messageId": "1234567890",
+            "publishTime": "2026-07-14T09:15:00Z",
+            "data": "eyJ2ZXJzaW9uIjoiMS4wIiwicGFja2FnZU5hbWUiOiJjb20uZXhhbXBsZS5hcHAifQ=="
+          },
+          "subscription": "projects/example/subscriptions/payment-rtdn"
+        }
+      },
       "response": {"status": 200}
     },
     {
       "key": "POST /v1/payments/webhooks/apple",
       "name": "Apple App Store Server Notification V2",
-      "request": {"body": {"signedPayload": "replace-with-apple-signed-payload"}},
+      "request": {
+        "path": {"provider": "apple"},
+        "body": {"signedPayload": "eyJhbGciOiJFUzI1NiIsIng1YyI6WyJleGFtcGxlIl19.example.signature"}
+      },
       "response": {"status": 200}
     },
     {
       "key": "GET /v1/admin/payments/providers",
-      "name": "Payment provider readiness",
-      "response": {"status": 200, "body": {"items": [{"name": "stripe", "ready": true, "requests": 0, "failures": 0, "average_latency_ms": 0}]}}
+      "name": "All provider readiness metrics",
+      "default": true,
+      "response": {
+        "status": 200,
+        "body": {
+          "items": [
+            {"name": "stripe", "ready": true, "requests": 128, "failures": 2, "average_latency_ms": 184.7},
+            {"name": "google", "ready": true, "requests": 37, "failures": 1, "average_latency_ms": 221.4},
+            {"name": "apple", "ready": true, "requests": 29, "failures": 0, "average_latency_ms": 198.2}
+          ]
+        }
+      }
     },
     {
       "key": "GET /v1/admin/payments/webhooks/failed",
-      "name": "List failed payment webhooks",
+      "name": "Failed provider webhook queue",
+      "default": true,
+      "request": {"query": {"limit": "50", "offset": "0"}},
+      "response": {
+        "status": 200,
+        "body": {
+          "items": [
+            {
+              "provider": "stripe",
+              "event_id": "evt_1FailedExample",
+              "event_type": "customer.subscription.updated",
+              "status": "FAILED",
+              "attempts": 3,
+              "last_error": "provider request timed out",
+              "last_attempt_at": "2026-07-14T09:15:00Z"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "key": "GET /v1/admin/payments/webhooks/failed",
+      "name": "Empty failed webhook queue",
       "request": {"query": {"limit": "50", "offset": "0"}},
       "response": {"status": 200, "body": {"items": []}}
     },
     {
       "key": "POST /v1/admin/payments/webhooks/retry",
-      "name": "Retry failed payment webhook",
-      "request": {"body": {"provider": "stripe", "event_id": "evt_replace_me"}},
+      "name": "Retry failed Stripe webhook",
+      "default": true,
+      "request": {"body": {"provider": "stripe", "event_id": "evt_1FailedExample"}},
       "response": {"status": 204}
     },
     {
       "key": "POST /v1/admin/payments/reconcile",
-      "name": "Run payment reconciliation",
+      "name": "Reconcile all enabled providers",
+      "default": true,
       "response": {"status": 204}
     }
   ]

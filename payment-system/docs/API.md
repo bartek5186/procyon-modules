@@ -52,3 +52,22 @@ Stable client error codes include `validation_failed`, `payment_error`,
 `payment_return_url_rejected`, `payment_signature_invalid`,
 `payment_idempotency_key_invalid`, and `payment_subscription_active`. Provider
 internals and credentials are never returned.
+
+## Postman documentation source
+
+The generated Postman collection uses two versioned sources from this module:
+
+- Go documentation comments above handlers in `controllers/controller.go`
+  populate the request **Docs** tab.
+- `docs/postman/payment-system.json` contains named request and response
+  variants for Stripe, Google Play, Apple and operational error cases.
+
+The example marked with `"default": true` becomes the main request payload.
+All remaining variants are generated as separately named Postman examples.
+Provider path variants use a concrete example key and an explicit path value,
+for example `GET /v1/payments/prices/stripe` together with
+`"path": {"provider": "stripe"}`.
+
+Keep examples executable in structure but safe in content: use test identifiers,
+placeholder signatures and synthetic customer data. Never commit live provider
+credentials, real webhook signatures, purchase tokens or personal data.
