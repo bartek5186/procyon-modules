@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	coreevents "github.com/bartek5186/procyon-core/events"
 	"github.com/bartek5186/procyon-modules/payment-system/models"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -77,7 +78,7 @@ type paymentReconciler interface {
 	ReconcileSubscription(context.Context, models.PaymentSubscription) error
 }
 
-type paymentProviderFactory func(paymentRepository, *zap.Logger, RuntimeConfig) (PaymentProvider, bool, error)
+type paymentProviderFactory func(paymentRepository, *zap.Logger, *coreevents.Bus, RuntimeConfig) (PaymentProvider, bool, error)
 
 var (
 	paymentFactoriesMu sync.Mutex
@@ -105,7 +106,7 @@ type providerMetrics struct {
 	totalLatency       time.Duration
 }
 
-func NewPaymentSystemService(repo paymentRepository, logger *zap.Logger, config RuntimeConfig) (*PaymentSystemService, error) {
+func NewPaymentSystemService(repo paymentRepository, logger *zap.Logger, eventBus *coreevents.Bus, config RuntimeConfig) (*PaymentSystemService, error) {
 	if logger == nil {
 		logger = zap.NewNop()
 	}
@@ -125,7 +126,7 @@ func NewPaymentSystemService(repo paymentRepository, logger *zap.Logger, config 
 	factories := append([]paymentProviderFactory(nil), paymentFactories...)
 	paymentFactoriesMu.Unlock()
 	for _, factory := range factories {
-		provider, enabled, err := factory(repo, logger, config)
+		provider, enabled, err := factory(repo, logger, eventBus, config)
 		if err != nil {
 			return nil, err
 		}

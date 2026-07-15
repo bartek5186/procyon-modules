@@ -80,16 +80,16 @@ func TestEnabledProviderFactoriesFailFastOnMissingCredentials(t *testing.T) {
 	runtime.EnabledProviders = []string{"stripe"}
 	t.Setenv("STRIPE_SECRET_KEY", "")
 	t.Setenv("STRIPE_WEBHOOK_SECRET", "")
-	if _, _, err := newStripePaymentProvider(&fakePaymentModuleRepository{}, zap.NewNop(), runtime); err == nil {
+	if _, _, err := newStripePaymentProvider(&fakePaymentModuleRepository{}, zap.NewNop(), nil, runtime); err == nil {
 		t.Fatal("expected missing Stripe credentials error")
 	}
 	runtime.EnabledProviders = []string{"google"}
-	if _, _, err := newGooglePaymentProvider(&fakePaymentModuleRepository{}, zap.NewNop(), runtime); err == nil {
+	if _, _, err := newGooglePaymentProvider(&fakePaymentModuleRepository{}, zap.NewNop(), nil, runtime); err == nil {
 		t.Fatal("expected missing Google credentials error")
 	}
 	runtime.EnabledProviders = []string{"apple"}
 	t.Setenv("APPLE_APP_STORE_CONFIG_FILE", "")
-	if _, _, err := newApplePaymentProvider(&fakePaymentModuleRepository{}, zap.NewNop(), runtime); err == nil {
+	if _, _, err := newApplePaymentProvider(&fakePaymentModuleRepository{}, zap.NewNop(), nil, runtime); err == nil {
 		t.Fatal("expected missing Apple config error")
 	}
 }

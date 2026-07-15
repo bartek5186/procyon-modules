@@ -22,6 +22,7 @@ import (
 	"strings"
 	"time"
 
+	coreevents "github.com/bartek5186/procyon-core/events"
 	"github.com/bartek5186/procyon-modules/payment-system/models"
 	"go.uber.org/zap"
 	"golang.org/x/crypto/ocsp"
@@ -123,7 +124,7 @@ func init() {
 	registerPaymentProviderFactory(newApplePaymentProvider)
 }
 
-func newApplePaymentProvider(repo paymentRepository, logger *zap.Logger, runtime RuntimeConfig) (PaymentProvider, bool, error) {
+func newApplePaymentProvider(repo paymentRepository, logger *zap.Logger, _ *coreevents.Bus, runtime RuntimeConfig) (PaymentProvider, bool, error) {
 	if !containsProvider(runtime.EnabledProviders, applePaymentProviderName) {
 		return nil, false, nil
 	}

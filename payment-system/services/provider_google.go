@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	coreevents "github.com/bartek5186/procyon-core/events"
 	"github.com/bartek5186/procyon-modules/payment-system/models"
 	"go.uber.org/zap"
 	"google.golang.org/api/androidpublisher/v3"
@@ -64,7 +65,7 @@ type googleDeveloperNotification struct {
 
 func init() { registerPaymentProviderFactory(newGooglePaymentProvider) }
 
-func newGooglePaymentProvider(repo paymentRepository, logger *zap.Logger, config RuntimeConfig) (PaymentProvider, bool, error) {
+func newGooglePaymentProvider(repo paymentRepository, logger *zap.Logger, _ *coreevents.Bus, config RuntimeConfig) (PaymentProvider, bool, error) {
 	if !containsProvider(config.EnabledProviders, googlePaymentProviderName) {
 		return nil, false, nil
 	}

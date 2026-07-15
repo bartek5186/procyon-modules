@@ -5,7 +5,7 @@ go 1.26.0
 toolchain go1.26.2
 
 require (
-	github.com/bartek5186/procyon-core v0.3.0
+	github.com/bartek5186/procyon-core v0.4.0
 	github.com/glebarez/sqlite v1.11.0
 	github.com/labstack/echo/v4 v4.13.4
 	github.com/ory/client-go v1.22.5

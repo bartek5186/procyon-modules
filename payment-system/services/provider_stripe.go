@@ -11,6 +11,8 @@ import (
 	"sync"
 	"time"
 
+	coreevents "github.com/bartek5186/procyon-core/events"
+	"github.com/bartek5186/procyon-modules/payment-system/contracts"
 	"github.com/bartek5186/procyon-modules/payment-system/models"
 	"github.com/stripe/stripe-go/v84"
 	"github.com/stripe/stripe-go/v84/webhook"
@@ -20,23 +22,25 @@ import (
 const stripePaymentProviderName = "stripe"
 
 type stripePaymentProvider struct {
-	repo          paymentRepository
-	client        *stripe.Client
-	logger        *zap.Logger
-	webhookSecret string
-	trialDays     int
-	cacheMu       sync.RWMutex
-	prices        []models.PaymentPriceOption
-	pricesAt      time.Time
-	products      map[string]Product
-	webhookLease  time.Duration
+	repo                 paymentRepository
+	client               *stripe.Client
+	logger               *zap.Logger
+	webhookSecret        string
+	trialDays            int
+	cacheMu              sync.RWMutex
+	prices               []models.PaymentPriceOption
+	pricesAt             time.Time
+	products             map[string]Product
+	webhookLease         time.Duration
+	eventBus             *coreevents.Bus
+	resolveCheckoutPrice func(context.Context, string) (string, error)
 }
 
 func init() {
 	registerPaymentProviderFactory(newStripePaymentProvider)
 }
 
-func newStripePaymentProvider(repo paymentRepository, logger *zap.Logger, config RuntimeConfig) (PaymentProvider, bool, error) {
+func newStripePaymentProvider(repo paymentRepository, logger *zap.Logger, eventBus *coreevents.Bus, config RuntimeConfig) (PaymentProvider, bool, error) {
 	if !containsProvider(config.EnabledProviders, stripePaymentProviderName) {
 		return nil, false, nil
 	}
@@ -64,6 +68,7 @@ func newStripePaymentProvider(repo paymentRepository, logger *zap.Logger, config
 		trialDays:     trialDays,
 		products:      config.Products[stripePaymentProviderName],
 		webhookLease:  config.WebhookLease,
+		eventBus:      eventBus,
 	}, true, nil
 }
 
@@ -128,6 +133,11 @@ func (p *stripePaymentProvider) Prices(ctx context.Context) ([]models.PaymentPri
 }
 
 func (p *stripePaymentProvider) CreateCheckout(ctx context.Context, identityID, priceID, successURL, cancelURL, idempotencyKey string) (string, error) {
+	product, ok := p.products[priceID]
+	if !ok || product.Kind != "one_time" {
+		return "", models.ErrPaymentProductRejected
+	}
+	metadata := stripeCheckoutMetadata(identityID, priceID, product.PlanCode)
 	params := &stripe.CheckoutSessionCreateParams{
 		Mode: stripe.String(string(stripe.CheckoutSessionModePayment)),
 		LineItems: []*stripe.CheckoutSessionCreateLineItemParams{
@@ -135,8 +145,8 @@ func (p *stripePaymentProvider) CreateCheckout(ctx context.Context, identityID, 
 		},
 		SuccessURL:        stripe.String(successURL),
 		CancelURL:         stripe.String(cancelURL),
-		Metadata:          map[string]string{"identity_id": identityID},
-		PaymentIntentData: &stripe.CheckoutSessionCreatePaymentIntentDataParams{Metadata: map[string]string{"identity_id": identityID}},
+		Metadata:          metadata,
+		PaymentIntentData: &stripe.CheckoutSessionCreatePaymentIntentDataParams{Metadata: metadata},
 	}
 	params.SetIdempotencyKey(idempotencyKey)
 	session, err := p.client.V1CheckoutSessions.Create(ctx, params)
@@ -147,6 +157,11 @@ func (p *stripePaymentProvider) CreateCheckout(ctx context.Context, identityID, 
 }
 
 func (p *stripePaymentProvider) CreateSubscription(ctx context.Context, identityID, email, priceID, successURL, cancelURL, idempotencyKey string) (string, error) {
+	product, ok := p.products[priceID]
+	if !ok || product.Kind != "subscription" {
+		return "", models.ErrPaymentProductRejected
+	}
+	metadata := stripeCheckoutMetadata(identityID, priceID, product.PlanCode)
 	params := &stripe.CheckoutSessionCreateParams{
 		Mode: stripe.String(string(stripe.CheckoutSessionModeSubscription)),
 		LineItems: []*stripe.CheckoutSessionCreateLineItemParams{
@@ -154,9 +169,9 @@ func (p *stripePaymentProvider) CreateSubscription(ctx context.Context, identity
 		},
 		SuccessURL: stripe.String(successURL),
 		CancelURL:  stripe.String(cancelURL),
-		Metadata:   map[string]string{"identity_id": identityID},
+		Metadata:   metadata,
 		SubscriptionData: &stripe.CheckoutSessionCreateSubscriptionDataParams{
-			Metadata: map[string]string{"identity_id": identityID},
+			Metadata: metadata,
 		},
 	}
 	if customerID, err := p.repo.CustomerID(ctx, p.Name(), identityID); err != nil {
@@ -251,7 +266,7 @@ func (p *stripePaymentProvider) handleStripeEvent(ctx context.Context, event str
 		if err := json.Unmarshal(event.Data.Raw, &session); err != nil {
 			return err
 		}
-		return p.handleStripeCheckout(ctx, &session, time.Unix(event.Created, 0).UTC(), event.Type)
+		return p.handleStripeCheckout(ctx, &session, event.ID, time.Unix(event.Created, 0).UTC(), event.Type)
 
 	case stripe.EventTypeInvoicePaid, stripe.EventTypeInvoicePaymentFailed:
 		var invoice stripe.Invoice
@@ -316,7 +331,7 @@ func (p *stripePaymentProvider) handleStripeEvent(ctx context.Context, event str
 	return nil
 }
 
-func (p *stripePaymentProvider) handleStripeCheckout(ctx context.Context, session *stripe.CheckoutSession, occurredAt time.Time, eventType stripe.EventType) error {
+func (p *stripePaymentProvider) handleStripeCheckout(ctx context.Context, session *stripe.CheckoutSession, providerEventID string, occurredAt time.Time, eventType stripe.EventType) error {
 	externalID := session.ID
 	if session.PaymentIntent != nil && session.PaymentIntent.ID != "" {
 		externalID = session.PaymentIntent.ID
@@ -343,8 +358,37 @@ func (p *stripePaymentProvider) handleStripeCheckout(ctx context.Context, sessio
 	if session.Mode == stripe.CheckoutSessionModeSubscription {
 		payment.Kind = "subscription_cycle"
 	}
+	var product Product
+	if payment.Status == models.PaymentStatusSucceeded && session.Mode == stripe.CheckoutSessionModePayment {
+		if strings.TrimSpace(identityID) == "" {
+			return errors.New("Stripe Checkout is missing Procyon identity metadata")
+		}
+		var err error
+		payment.PriceID, product, err = p.checkoutProduct(ctx, session)
+		if err != nil {
+			return err
+		}
+	} else if session.Metadata != nil {
+		payment.PriceID = strings.TrimSpace(session.Metadata["price_id"])
+	}
 	if err := p.repo.UpsertPayment(ctx, payment); err != nil {
 		return err
+	}
+	if payment.Status == models.PaymentStatusSucceeded && session.Mode == stripe.CheckoutSessionModePayment {
+		if p.eventBus == nil {
+			return errors.New("payment-system requires the Procyon event bus to publish completed purchases")
+		}
+		return coreevents.Publish(ctx, p.eventBus, contracts.PurchaseCompletedV1Topic, coreevents.Message[contracts.PurchaseCompletedV1]{
+			ID:            fmt.Sprintf("%s:%s:%s", contracts.PurchaseCompletedV1Topic, p.Name(), payment.ExternalID),
+			OccurredAt:    occurredAt,
+			Source:        "payment-system",
+			CorrelationID: providerEventID,
+			Payload: contracts.PurchaseCompletedV1{
+				Provider: p.Name(), ExternalPaymentID: payment.ExternalID, CheckoutID: session.ID,
+				IdentityID: identityID, PriceID: payment.PriceID, PlanCode: product.PlanCode,
+				AmountMinor: payment.AmountMinor, Currency: strings.ToUpper(payment.Currency), CompletedAt: occurredAt,
+			},
+		})
 	}
 	if subscriptionID == "" {
 		return nil
@@ -430,7 +474,11 @@ func (p *stripePaymentProvider) upsertStripeSubscription(ctx context.Context, su
 		model.CurrentPeriodStart = time.Unix(item.CurrentPeriodStart, 0).UTC()
 		model.CurrentPeriodEnd = time.Unix(item.CurrentPeriodEnd, 0).UTC()
 		if item.Price != nil {
-			model.PlanCode = firstPaymentValue(item.Price.Metadata["plan_code"], item.Price.ID)
+			catalogPlanCode := ""
+			if product, ok := p.products[item.Price.ID]; ok {
+				catalogPlanCode = product.PlanCode
+			}
+			model.PlanCode = firstPaymentValue(item.Price.Metadata["plan_code"], subscription.Metadata["plan_code"], catalogPlanCode, item.Price.ID)
 		}
 	}
 	if err := p.repo.UpsertSubscription(ctx, model); err != nil {
@@ -481,4 +529,59 @@ func firstPaymentValue(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func stripeCheckoutMetadata(identityID, priceID, planCode string) map[string]string {
+	return map[string]string{
+		"identity_id": strings.TrimSpace(identityID),
+		"price_id":    strings.TrimSpace(priceID),
+		"plan_code":   strings.TrimSpace(planCode),
+	}
+}
+
+func (p *stripePaymentProvider) checkoutProduct(ctx context.Context, session *stripe.CheckoutSession) (string, Product, error) {
+	priceID := ""
+	if session.Metadata != nil {
+		priceID = strings.TrimSpace(session.Metadata["price_id"])
+	}
+	if priceID == "" && session.LineItems != nil && len(session.LineItems.Data) > 0 && session.LineItems.Data[0] != nil && session.LineItems.Data[0].Price != nil {
+		priceID = session.LineItems.Data[0].Price.ID
+	}
+	if priceID == "" {
+		var err error
+		if p.resolveCheckoutPrice != nil {
+			priceID, err = p.resolveCheckoutPrice(ctx, session.ID)
+		} else {
+			priceID, err = p.loadCheckoutPrice(ctx, session.ID)
+		}
+		if err != nil {
+			return "", Product{}, fmt.Errorf("resolve Stripe Checkout %s price: %w", session.ID, err)
+		}
+	}
+	product, ok := p.products[priceID]
+	if !ok || product.Kind != "one_time" {
+		return "", Product{}, models.ErrPaymentProductRejected
+	}
+	if session.Metadata != nil {
+		if planCode := strings.TrimSpace(session.Metadata["plan_code"]); planCode != "" && planCode != product.PlanCode {
+			return "", Product{}, models.ErrPaymentProductRejected
+		}
+	}
+	return priceID, product, nil
+}
+
+func (p *stripePaymentProvider) loadCheckoutPrice(ctx context.Context, sessionID string) (string, error) {
+	if p.client == nil || p.client.V1CheckoutSessions == nil {
+		return "", errors.New("Stripe Checkout client is unavailable")
+	}
+	params := &stripe.CheckoutSessionListLineItemsParams{Session: stripe.String(sessionID)}
+	for item, err := range p.client.V1CheckoutSessions.ListLineItems(ctx, params) {
+		if err != nil {
+			return "", err
+		}
+		if item != nil && item.Price != nil && strings.TrimSpace(item.Price.ID) != "" {
+			return item.Price.ID, nil
+		}
+	}
+	return "", errors.New("Stripe Checkout has no price line item")
 }

@@ -54,7 +54,9 @@ the plugin removes its runtime wiring but intentionally preserves payment data.
   processing; a stale worker cannot finalize a lease taken by another worker.
 
 See [configuration](docs/CONFIGURATION.md), [API](docs/API.md),
-[operations](docs/OPERATIONS.md), and [data handling](docs/DATA_HANDLING.md).
+[Stripe web integration](docs/STRIPE_WEB_INTEGRATION.md),
+[typed events](docs/EVENTS.md), [operations](docs/OPERATIONS.md), and
+[data handling](docs/DATA_HANDLING.md).
 The provider flow documentation shown in Postman's module **Overview** is kept
 in [docs/postman/overview.md](docs/postman/overview.md).
 

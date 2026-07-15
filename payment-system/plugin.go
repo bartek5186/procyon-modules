@@ -38,6 +38,9 @@ func New(_ context.Context, dependencies coreplugins.Dependencies, raw json.RawM
 	if dependencies.DB == nil {
 		return nil, fmt.Errorf("payment-system requires a database")
 	}
+	if dependencies.Events == nil {
+		return nil, fmt.Errorf("payment-system requires the Procyon event bus; update the application runtime wiring")
+	}
 	var config Config
 	if len(raw) > 0 {
 		if err := json.Unmarshal(raw, &config); err != nil {
@@ -49,7 +52,7 @@ func New(_ context.Context, dependencies coreplugins.Dependencies, raw json.RawM
 		return nil, fmt.Errorf("configure payment-system: %w", err)
 	}
 	repository := store.NewPaymentSystemStore(dependencies.DB)
-	service, err := services.NewPaymentSystemService(repository, dependencies.Logger, runtimeConfig)
+	service, err := services.NewPaymentSystemService(repository, dependencies.Logger, dependencies.Events, runtimeConfig)
 	if err != nil {
 		return nil, fmt.Errorf("initialize payment-system providers: %w", err)
 	}

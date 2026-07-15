@@ -16,6 +16,7 @@ type fakePaymentModuleRepository struct {
 	payments             []models.PaymentEvent
 	subscriptions        []models.PaymentSubscription
 	webhooks             []models.PaymentWebhookEvent
+	webhookResults       []error
 	externalSubscription *models.PaymentSubscription
 	allSubscriptions     []models.PaymentSubscription
 }
@@ -24,7 +25,8 @@ func (r *fakePaymentModuleRepository) ClaimWebhook(_ context.Context, event mode
 	r.webhooks = append(r.webhooks, event)
 	return "lease-test", true, nil
 }
-func (r *fakePaymentModuleRepository) FinishWebhook(context.Context, string, string, string, error) error {
+func (r *fakePaymentModuleRepository) FinishWebhook(_ context.Context, _, _, _ string, processErr error) error {
+	r.webhookResults = append(r.webhookResults, processErr)
 	return nil
 }
 func (r *fakePaymentModuleRepository) UpsertPayment(_ context.Context, payment models.PaymentEvent) error {

@@ -8,6 +8,7 @@ import (
 	"sort"
 	"testing"
 
+	coreevents "github.com/bartek5186/procyon-core/events"
 	coreplugins "github.com/bartek5186/procyon-core/plugins"
 	"github.com/glebarez/sqlite"
 	"github.com/labstack/echo/v4"
@@ -45,9 +46,16 @@ func TestPluginStartupMigrationRoutesAndShutdown(t *testing.T) {
 
 func TestPluginRejectsInvalidProviderConfiguration(t *testing.T) {
 	db := pluginTestDB(t)
-	_, err := New(context.Background(), coreplugins.Dependencies{DB: db, Logger: zap.NewNop()}, json.RawMessage(`{"providers":["unknown"]}`))
+	_, err := New(context.Background(), coreplugins.Dependencies{DB: db, Logger: zap.NewNop(), Events: coreevents.New()}, json.RawMessage(`{"providers":["unknown"]}`))
 	if err == nil {
 		t.Fatal("expected invalid provider configuration error")
+	}
+}
+
+func TestPluginRequiresEventBus(t *testing.T) {
+	_, err := New(context.Background(), coreplugins.Dependencies{DB: pluginTestDB(t), Logger: zap.NewNop()}, nil)
+	if err == nil || err.Error() != "payment-system requires the Procyon event bus; update the application runtime wiring" {
+		t.Fatalf("unexpected event bus error: %v", err)
 	}
 }
 
@@ -61,7 +69,7 @@ func newTestPlugin(t *testing.T) coreplugins.Plugin {
 	t.Setenv("STRIPE_SECRET_KEY", "sk_test_fixture")
 	t.Setenv("STRIPE_WEBHOOK_SECRET", "whsec_fixture")
 	raw, _ := json.Marshal(Config{Providers: []string{"stripe"}, Values: map[string]string{"products_file": products, "reconcile_every": "24h"}})
-	plugin, err := New(context.Background(), coreplugins.Dependencies{DB: pluginTestDB(t), Logger: zap.NewNop()}, raw)
+	plugin, err := New(context.Background(), coreplugins.Dependencies{DB: pluginTestDB(t), Logger: zap.NewNop(), Events: coreevents.New()}, raw)
 	if err != nil {
 		t.Fatal(err)
 	}
