@@ -26,6 +26,11 @@ func TestPluginStartupMigrationRoutesAndShutdown(t *testing.T) {
 	}
 	e := echo.New()
 	plugin.RegisterRoutes(coreplugins.Routes{Public: e.Group(""), Authenticated: e.Group("/api"), Admin: e.Group("/admin")})
+	if starter, ok := plugin.(coreplugins.Starter); !ok {
+		t.Fatal("plugin does not implement Starter")
+	} else if err := starter.Start(context.Background()); err != nil {
+		t.Fatalf("start: %v", err)
+	}
 	var routes []string
 	for _, route := range e.Routes() {
 		routes = append(routes, route.Method+" "+route.Path)

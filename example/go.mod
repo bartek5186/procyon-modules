@@ -5,7 +5,7 @@ go 1.26.0
 toolchain go1.26.2
 
 require (
-	github.com/bartek5186/procyon-core v0.2.0
+	github.com/bartek5186/procyon-core v0.5.0
 	github.com/labstack/echo/v4 v4.13.4
 )
 

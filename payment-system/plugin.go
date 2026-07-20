@@ -74,7 +74,6 @@ func (p *Plugin) Policies() []authz.Policy {
 }
 
 func (p *Plugin) RegisterRoutes(routes coreplugins.Routes) {
-	p.startBackgroundReconciliation()
 	if routes.Public != nil {
 		routes.Public.GET("/payments/prices/:provider", p.controller.PriceList)
 		routes.Public.POST("/payments/webhooks/:provider", p.controller.Notify)
@@ -103,6 +102,11 @@ func (p *Plugin) RegisterRoutes(routes coreplugins.Routes) {
 	}
 }
 
+func (p *Plugin) Start(ctx context.Context) error {
+	p.startBackgroundReconciliation(ctx)
+	return nil
+}
+
 func (p *Plugin) Shutdown(context.Context) error {
 	if p.stop != nil {
 		p.stop()
@@ -111,9 +115,9 @@ func (p *Plugin) Shutdown(context.Context) error {
 	return nil
 }
 
-func (p *Plugin) startBackgroundReconciliation() {
+func (p *Plugin) startBackgroundReconciliation(parent context.Context) {
 	p.startOnce.Do(func() {
-		ctx, cancel := context.WithCancel(context.Background())
+		ctx, cancel := context.WithCancel(parent)
 		p.stop = cancel
 		p.wg.Add(1)
 		go func() {
@@ -131,6 +135,8 @@ func (p *Plugin) startBackgroundReconciliation() {
 		}()
 	})
 }
+
+var _ coreplugins.Starter = (*Plugin)(nil)
 
 func permissionMiddleware(routes coreplugins.Routes) []echo.MiddlewareFunc {
 	if routes.Require == nil {

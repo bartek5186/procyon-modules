@@ -3,12 +3,12 @@
   "modules": {
     "example": {
       "source": "./example",
-      "version": "0.1.1",
+      "version": "0.1.2",
       "description": "Minimal Procyon shared-module example"
     },
     "payment-system": {
       "source": "./payment-system",
-      "version": "0.4.0",
+      "version": "0.5.0",
       "description": "Provider-based payments and subscriptions"
     }
   }
